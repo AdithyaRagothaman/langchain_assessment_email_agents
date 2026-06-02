@@ -1,0 +1,76 @@
+{
+  "schema_version": "1.0",
+  "description": "Sample email inputs for Chain 1 and Chain 2. Pass only subject, body, and thread_context to your chains.",
+  "emails": [
+    {
+      "id": "01_sampling_mockup_single_style",
+      "source_inspiration": "Assignment example 1; typical buyer mockup request",
+      "subject": "Need mockup sample for RI15104",
+      "body": "Hi,\nPlease arrange mockup sample for RI15104 with trims and submit RD by Friday.\nThanks.",
+      "thread_context": "First sampling request from this buyer for Holiday 26 program."
+    },
+    {
+      "id": "02_sampling_yardage_request",
+      "source_inspiration": "Cleaned email em_20260416_095506 (S27 FM Sample Yardage thread)",
+      "subject": "RE: S27 FM Sample Yardage Request - ST-2045",
+      "body": "Hi Subish,\nPls get back the RD by this week for ST-2045.\nWe need yardage approval before bulk fabric booking.\nThanks,\nTheia",
+      "thread_context": "Prior message from vendor: yardage sent via DHL AWB 9619285281 for Spring 27 fabric development testing."
+    },
+    {
+      "id": "03_sampling_olx_fit_request",
+      "source_inspiration": "Cleaned email em_20260415_105131 (GARAN OLX SAMPLE REQUEST)",
+      "subject": "GARAN OLX FIT Sample Request - RI14822",
+      "body": "Dear Team,\nAttached is the Garan Fall-26 OLX FIT sample request form for style RI14822.\nKindly initiate proto sample and confirm timeline.\nRegards,\nSubish",
+      "thread_context": ""
+    },
+    {
+      "id": "04_costing_revised_quote",
+      "source_inspiration": "Cleaned email em_20260415_114052 (Hanna Soft Jersey costing + proto)",
+      "subject": "RE: Hol-26 Hanna Soft Jersey – Costing & Proto Sample for RI15201",
+      "body": "Dear Sathish,\nAs discussed, please use the fabric price from my previous mail and advise your capacity along with new and revised costings for RI15201.\nBased on capacity and costing we will proceed with proto samples. Share details by tomorrow.\nRegards,\nSabari",
+      "thread_context": "Previous mail shared Hanna Soft Jersey program with 6 body styles and target FOB prices."
+    },
+    {
+      "id": "05_costing_capacity_followup",
+      "source_inspiration": "Costing thread follow-up; style ref only in context",
+      "subject": "RE: Revised costing submission",
+      "body": "Hi,\nAny update on the revised costing we discussed last week?\nPlease confirm if you can meet the CRD.\nThanks.",
+      "thread_context": "Thread about ST-2045 and RI15201 costing for Fall 26 program. Buyer waiting for updated FOB before PO release."
+    },
+    {
+      "id": "06_purchase_order_ship_mode_update",
+      "source_inspiration": "Cleaned email em_20260513_040036 (PO# 234917 GTN portal)",
+      "subject": "RE: PO# 234917(3033031) - Not Reflected into GTN Portal - PTS #562212270220",
+      "body": "Hi Ravi,\nPls allow me to share updated PO with updating ship mode.\nPls confirm your receiving and confirm the booking ASAP.\nThanks,\nInul",
+      "thread_context": "Buyer reported PO 234917 not reflected on GTN portal. Forwarder and merchandising teams are on copy."
+    },
+    {
+      "id": "07_purchase_order_prebooking",
+      "source_inspiration": "Cleaned email em_20260513_094948 (Delta Galil pre-booking / PO 3034587)",
+      "subject": "RE: DELTA GALIL PANAMA - PRE BOOKING (BEST CORP) - PO# 3034587 - CRD 08.05.2026",
+      "body": "Dear exports team,\nNoted your message. DN shall follow ASAP once sailed.\nPlease confirm vessel details for PO 3034587.\nBest Regards,\nRajesh",
+      "thread_context": "Pre-booking thread for Panama shipment. Invoice 57/2627, carton 29. Style RI15104 referenced in earlier PO attachment."
+    },
+    {
+      "id": "08_general_wip_meeting_followup",
+      "source_inspiration": "Cleaned email em_20260513_111316 (Cheat Sheet - M&M Orders)",
+      "subject": "RE: Cheat Sheet - M&M Orders",
+      "body": "Hi Vijay,\nAs discussed in the WIP meeting, please provide the cheat sheet and packaging details for all related programs.\nThanks for your help!\nAnisul",
+      "thread_context": "Internal WIP meeting follow-up. No specific style action requested in this message."
+    },
+    {
+      "id": "09_general_production_update",
+      "source_inspiration": "Cleaned email em_20260513_105407 (elastic rejection / production plan)",
+      "subject": "RE: Reg. ELASTIC REJECTION INFORMATION",
+      "body": "Dear Vijay,\nWe have re-looked into the production plan and will try to finish production by 22/5 barring unforeseen circumstances.\nBest Regards,\nArtidech",
+      "thread_context": "Ongoing thread about elastic quality rejection. No new sample or costing request in this reply."
+    },
+    {
+      "id": "10_unknown_delivery_failure",
+      "source_inspiration": "Cleaned email em_20260513_123828 (Undelivered Mail Returned to Sender)",
+      "subject": "Undelivered Mail Returned to Sender",
+      "body": "This is the mail system at host ncismumsmtp46.netcore.co.in.\nYour message could not be delivered to one or more recipients.\n<vijayvenkadesh@bestcorp.in>: 550 5.1.1 Recipient address rejected: User unknown in virtual alias table.",
+      "thread_context": ""
+    }
+  ]
+}
