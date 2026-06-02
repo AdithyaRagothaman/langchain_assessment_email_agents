@@ -1,7 +1,7 @@
 # Input Format — Mapping Production Emails to Chain Input
 
-The chains accept a flat JSON object with three string
-fields. This is what interns should model as their `EmailInput` Pydantic schema.
+The chains accept a flat JSON object with three string fields. This is what
+interns should model as their `EmailInput` Pydantic schema.
 
 ```json
 {
@@ -103,3 +103,11 @@ See `fixtures/sample_emails.json` for 10 ready-to-use inputs covering all
 assignment categories. Each entry includes an `id` and `source_inspiration`
 field for traceability — **do not pass those fields to the chains**; only
 `subject`, `body`, and `thread_context` are chain input.
+
+`Client docs demo/` can be reviewed to understand techpack/document structure
+for future workflow design, but those files are out of scope for the current
+assignment input contract.
+
+For the design-note part of the assignment, interns should review those samples
+and propose what order-level fields must be persisted in a shared state store
+so multiple agents can safely update an order over time.
