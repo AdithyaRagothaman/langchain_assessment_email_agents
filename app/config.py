@@ -1,3 +1,4 @@
+# Loads app settings (API key, model name, temperature) from the .env file.
 from __future__ import annotations
 
 from pydantic import Field
