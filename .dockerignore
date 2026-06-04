@@ -1,0 +1,33 @@
+# Git
+.git/
+.gitignore
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+
+# Secrets — never bake the real .env into the image
+.env
+
+# Dev / test files — not needed in the container
+tests/
+fixtures/
+docs/
+debug_chains.py
+smoke_test.py
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editor and OS noise
+.DS_Store
+*.db
+
+# Build artefacts
+dist/
+build/
