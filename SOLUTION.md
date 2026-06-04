@@ -1,431 +1,198 @@
-# Solution — LangChain Email Classification Chains
+# LangChain Email Classification Pipeline
+
+This document explains my approach to solving the email classification assignment. It acts as a companion to the original `README.md` and outlines the architecture, my design choices, and the proposed order-state model.
 
 ---
 
-## Quick Start
+## Architecture Flow
 
-```bash
-# 1. Clone and enter the project
-cd langchain_assessment_email_agents
+The pipeline is split into two distinct chains to separate concerns. Here is exactly how an incoming email flows through the system:
 
-# 2. Create and activate a virtual environment
-python -m venv .venv
-
-# Windows
-.venv\Scripts\activate
-
-# macOS / Linux
-source .venv/bin/activate
-
-# 3. Install dependencies
-pip install -r requirements.txt
-
-# 4. Configure environment
-cp .env.example .env
-# Edit .env and set your GROQ_API_KEY
-
-# 5. Run the test suite (no API key required — all LLM calls are mocked)
-pytest tests/ -v
-
-# 6. Start the FastAPI server
-uvicorn app.main:app --reload --port 8000
-# Swagger UI → http://localhost:8000/docs
+```text
+[ Incoming Email ]
+  (Subject, Body, Context)
+         │
+         ▼
+┌──────────────────────────────────────────┐
+│ CHAIN 1: Classification & Extraction     │
+│ 1. LLM categorizes the email.            │
+│ 2. LLM extracts raw Style IDs.           │
+│ 3. Parser runs Regex cross-check.        │
+│ 4. Output forced into Pydantic model.    │
+└──────────────────────────────────────────┘
+         │
+         ▼  (Passes ClassificationResult object)
+         │
+┌──────────────────────────────────────────┐
+│ CHAIN 2: Action Recommendation           │
+│ 1. Takes Chain 1's structured output.    │
+│ 2. Maps category to operational action.  │
+│ 3. Output forced into Pydantic model.    │
+└──────────────────────────────────────────┘
+         │
+         ▼
+[ Final JSON Response ]
 ```
 
 ---
 
-## Architecture
+## Project Structure
 
-### Data Flow
+I organized the codebase to keep the API layer completely separate from the LangChain/LLM logic.
 
-```
-POST /api/v1/classify
-  { subject, body, thread_context }
-        │
-        ▼
-[EmailInput — Pydantic validation]
-        │
-        ▼
-┌─────────────────────────────────────────────┐
-│  Chain 1 — Classify + Extract               │
-│                                             │
-│  ChatPromptTemplate                         │
-│    → llm.invoke()  (Groq LLaMA 3.3 70B)    │
-│    → ClassificationOutputParser             │
-│        ├─ _extract_json()                   │
-│        ├─ validate_style_ids() [regex]      │
-│        └─ ClassificationResult (Pydantic)   │
-└─────────────────────────────────────────────┘
-        │
-        ▼  ClassificationResult
-           { category, extracted_ids, confidence }
-        │
-        ▼
-┌─────────────────────────────────────────────┐
-│  Chain 2 — Recommend Action                 │
-│                                             │
-│  ChatPromptTemplate                         │
-│    → llm.invoke()  (same Groq instance)     │
-│    → ActionOutputParser                     │
-│        ├─ _extract_json()                   │
-│        └─ ActionResult (Pydantic)           │
-└─────────────────────────────────────────────┘
-        │
-        ▼  PipelineResult
-           { classification, action }
-        │
-        ▼
-HTTP 200 JSON Response
-```
-
-### Folder Structure
-
-```
+```text
 app/
-├── llm/
-│   ├── models.py        ← All Pydantic input/output models and enums
-│   ├── prompts.py       ← ChatPromptTemplate definitions for Chain 1 & 2
-│   ├── chains.py        ← Chain 1 & Chain 2 factory functions (RunnableLambda)
-│   └── parser.py        ← Custom output parsers + regex hallucination validator
-├── services/
-│   └── email_pipeline.py  ← Orchestrates Chain 1 → Chain 2, error handling
 ├── api/
-│   └── routes.py        ← FastAPI router: POST /classify, GET /health
-├── config.py            ← Pydantic BaseSettings (reads .env)
-└── main.py              ← FastAPI application entry point
+│   └── routes.py          # The FastAPI endpoints (/classify and /health)
+├── llm/
+│   ├── chains.py          # Where Chain 1 and Chain 2 are built (RunnableLambda)
+│   ├── models.py          # All Pydantic schemas and Enums (the data rules)
+│   ├── parser.py          # Custom parsers (extracts JSON, runs Regex filters)
+│   └── prompts.py         # The exact instructions sent to the LLM
+├── services/
+│   └── email_pipeline.py  # The orchestrator that wires Chain 1 into Chain 2
+├── config.py              # Environment variable management (.env)
+└── main.py                # Starts the FastAPI server
 
 tests/
-└── test_chains.py       ← 10 pytest test cases, all LLM calls mocked
+└── test_chains.py         # 10 test cases (runs locally without hitting the API)
 
-fixtures/
-└── sample_emails.json   ← 10 real-inspired sample emails across all categories
-
-docs/
-└── INPUT_FORMAT.md      ← Production email → chain input field mapping
+docker-compose.yml         # Easy setup script for the team
+Dockerfile                 # Multi-stage build for production
 ```
 
 ---
 
-## Why Two Chains Instead of One
+##  How to Run
 
-| Concern | One Chain | Two Chains (this solution) |
-|---|---|---|
-| **Testability** | Must test classification + action together | Chain 1 and Chain 2 tested independently |
-| **Reusability** | Monolithic — cannot reuse classification alone | Chain 1 can be used in any context |
-| **Replaceability** | Changing action logic risks breaking classification | Swap Chain 2 without touching Chain 1 |
-| **Debuggability** | Hard to trace which step produced bad output | Clear intermediate `ClassificationResult` to inspect |
-| **Extension** | Requires rewriting the whole chain | Add a new category by editing enums + prompt only |
+You can run this project using a standard local Python environment or via Docker.
 
-The intermediate `ClassificationResult` object is also a first-class audit artifact — useful for logging, monitoring, and future routing decisions.
-
----
-
-## LangChain Structure & Composition
-
-Both chains are built using `RunnableLambda`, which wraps a standard Python function into a LangChain-compatible `Runnable`.
-
-**Why `RunnableLambda` over the standard `prompt | llm | parser` pipe?**
-
-Chain 1's parser requires the **original email text** to run the hallucination check. In a standard LCEL pipe, threading this extra variable requires `RunnablePassthrough` and `RunnableParallel`, adding complexity. With `RunnableLambda`, the variable is available naturally as a Python closure:
-
-```python
-def build_chain_1(llm: BaseLanguageModel) -> Runnable:
-
-    def _run_chain_1(inputs: dict) -> ClassificationResult:
-        email_text = " ".join([inputs["subject"], inputs["body"], inputs["thread_context"]])
-
-        messages = chain_1_prompt.format_messages(**inputs)
-        response = llm.invoke(messages)
-        raw_text = response.content
-
-        # email_text passed sideways into the parser for regex cross-check
-        return ClassificationOutputParser(email_text=email_text).parse(raw_text)
-
-    return RunnableLambda(_run_chain_1)
+**1. Set up your API Key:**
+```bash
+cp .env.example .env
+# Open .env and add your GROQ_API_KEY
 ```
 
-**Chain composition in `EmailPipeline.run()`:**
+### Option A: Local Setup (Standard)
+```bash
+# Create and activate a virtual environment
+python -m venv .venv
+source .venv/bin/activate  # Or .venv\Scripts\activate on Windows
 
-```python
-classification = self._chain_1.invoke(email_input.model_dump())
-action         = self._chain_2.invoke(classification)
-return PipelineResult(classification=classification, action=action)
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the FastAPI server
+uvicorn app.main:app --reload --port 8000
 ```
+The API is now live. Open `http://localhost:8000/docs` in your browser to test it visually using the Swagger UI.
 
-Chain 1 output (`ClassificationResult`) is passed directly as input to Chain 2. The chains are independently buildable and testable, but compose cleanly in the pipeline.
-
----
-
-## Structured Output Validation — Pydantic Strategy
-
-Every input and output in the system is a Pydantic v2 model:
-
-| Model | Layer | Purpose |
-|---|---|---|
-| `EmailInput` | Entry | Validates `subject`, `body`, `thread_context` before touching LLM |
-| `ClassificationResult` | Chain 1 output | `EmailCategory` enum, `extracted_ids` list, `confidence` in [0.0, 1.0] |
-| `ActionResult` | Chain 2 output | `RecommendedAction` enum, `ActionPriority` enum, `summary` string |
-| `PipelineResult` | API layer | Bundles both chain results for the HTTP response |
-
-**Enforcement example — confidence range:**
-```python
-confidence: Annotated[float, Field(ge=0.0, le=1.0)]
-```
-If the LLM returns `1.5`, Pydantic raises `ValidationError` before it ever reaches any business logic.
-
-**Enum enforcement:**
-```python
-class EmailCategory(str, Enum):
-    SAMPLING = "SAMPLING"
-    COSTING  = "COSTING"
-    ...
-```
-If the LLM invents a category like `"FABRIC_REQUEST"`, Pydantic rejects it immediately.
-
----
-
-## Hallucination Prevention — Two-Layer Defence
-
-LLMs can fabricate Style IDs that never appeared in the email. Two layers prevent this:
-
-**Layer 1 — Prompt instruction:**
-> *"Extract ONLY style reference IDs that appear VERBATIM in the email text. Do NOT invent or guess IDs."*
-
-**Layer 2 — Regex cross-check in `parser.py`:**
-
-```python
-_STYLE_ID_PATTERN = re.compile(r"\b[A-Z]{2}-?\d{4,}\b")
-
-def validate_style_ids(raw_ids: list[str], email_text: str) -> list[str]:
-    email_text_upper = email_text.upper()
-    validated = []
-    for raw_id in raw_ids:
-        normalised = raw_id.strip().upper()
-        if not _STYLE_ID_PATTERN.fullmatch(normalised):   # format check
-            continue
-        if normalised not in email_text_upper:             # existence check
-            continue
-        validated.append(raw_id.strip())
-    return validated
-```
-
-Every ID the LLM returns is:
-1. Checked against the regex pattern (`[A-Z]{2}-?\d{4,}`)
-2. Verified to exist **verbatim** in `subject + body + thread_context`
-
-A hallucinated `"RI99999"` in an email that never mentions it is always silently dropped.
-
----
-
-## Test Coverage & Correctness
-
-All 10 test cases run without any API key — LLM calls are replaced by `MagicMock`.
-
+**Running Tests locally:**
+*(Tests are fully mocked, so no API key is needed)*
 ```bash
 pytest tests/ -v
 ```
 
-| # | Test | What it verifies |
-|---|---|---|
-| 1 | `test_validate_style_ids_passes_valid_ids` | Valid IDs present in email text are kept |
-| 2 | `test_validate_style_ids_strips_hallucinated_ids` | IDs absent from email text are dropped |
-| 3 | `test_validate_style_ids_mixed` | Valid and hallucinated IDs handled in one call |
-| 4 | `test_chain_1_sampling_classification` | Chain 1 correctly produces a `SAMPLING` result |
-| 5 | `test_chain_1_general_no_ids` | Chain 1 returns `GENERAL` with empty `extracted_ids` |
-| 6 | `test_chain_1_purchase_order` | Chain 1 correctly produces `PURCHASE_ORDER` |
-| 7 | `test_chain_1_costing_ids_from_context` | IDs in `thread_context` are extracted correctly |
-| 8 | `test_chain_2_sampling_recommends_create_sample_task` | Chain 2 maps `SAMPLING` → `CREATE_SAMPLE_TASK` at `HIGH` |
-| 9 | `test_chain_2_unknown_recommends_escalate` | Chain 2 maps `UNKNOWN` → `ESCALATE` at `MEDIUM` |
-| 10 | `test_classification_parser_raises_on_invalid_json` | Parser raises `OutputParserException` on plain-text LLM output |
-
----
-
-## API Reference (Bonus)
-
-### `POST /api/v1/classify`
-
-**Request:**
-```json
-{
-  "subject": "Need mockup sample for RI15104",
-  "body": "Please arrange mockup sample for RI15104 with trims.",
-  "thread_context": "First order from this buyer."
-}
-```
-
-**Response `200 OK`:**
-```json
-{
-  "classification": {
-    "category": "SAMPLING",
-    "extracted_ids": ["RI15104"],
-    "confidence": 0.95
-  },
-  "action": {
-    "recommended_action": "CREATE_SAMPLE_TASK",
-    "priority": "HIGH",
-    "summary": "Buyer requested mockup sample for style RI15104."
-  }
-}
-```
-
-**Error responses:**
-- `422` — LLM returned bad output (caught `EmailPipelineError`)
-- `500` — Unexpected server error
-
-### `GET /api/v1/health`
-
-Returns `{"status": "ok"}` — used by Docker health checks and load balancers.
-
----
-
-## Docker (Bonus)
-
+### Option B: Docker Compose (Additional)
+If you prefer not to install dependencies locally, you can use the included Docker setup.
 ```bash
-# Build
-docker build -t email-classifier .
-
-# Run (pass API key as env var)
-docker run -p 8000:8000 -e GROQ_API_KEY=your_key_here email-classifier
-
-# Or pass via .env file
-docker run -p 8000:8000 --env-file .env email-classifier
+docker compose up
 ```
+*(The API will be available at the same `http://localhost:8000/docs` URL)*.
 
-The Dockerfile uses a **multi-stage build**:
-- Stage 1 (builder): installs all packages including build tools
-- Stage 2 (runtime): copies only the installed packages and `app/` source — no test files, no dev scripts, no build tools
+---
+### Why I Used RunnableLambda(chains.py)
 
-The container runs as a non-root user and includes a health check on `/api/v1/health`.
+A simple LCEL pipeline (`prompt | llm | parser`) works well when the workflow only contains prompting and output parsing.
+
+In this solution, I needed additional logic around the LLM call, such as:
+
+* Combining email fields before processing
+* Logging inputs and outputs for debugging
+* Parsing the raw LLM response into Pydantic models
+* Validating extracted Style IDs using regex checks
+
+Because of these extra processing steps, I wrapped the logic inside Python functions and exposed them as LangChain runnables using `RunnableLambda`.
+
+This allowed me to keep the custom business logic inside each chain while still using LangChain's runnable interface and chain composition capabilities.
+
 
 ---
 
-## Integration into a Larger Pipeline
+## Design Answers (Answers based on the README)
 
-```python
-from app.services.email_pipeline import EmailPipeline
-from app.llm.models import RecommendedAction
+Here are the answers to the architectural questions posed in the assignment brief.
 
-pipeline = EmailPipeline()
+### 1. Why build two separate chains instead of one?
+I separated the workflow into two chains because they have different responsibilities. Chain 1 focuses on understanding the email and extracting information, while Chain 2 focuses on deciding what action should be taken. Keeping them separate makes the code easier to maintain, test, and extend in the future
 
-result = pipeline.run(
-    subject=email.subject,
-    body=email.body,
-    thread_context=email.thread_context,
-)
+### 2. How do you prevent the LLM from hallucinating Style IDs?
+I don't directly trust the LLM output. After the LLM extracts the IDs, I use regex validation to check whether those IDs actually exist in the original email text. If an ID is not found in the email, it is removed. This helps prevent hallucinated style IDs from being returned.(it works via parser.py file)
 
-match result.action.recommended_action:
-    case RecommendedAction.CREATE_SAMPLE_TASK:
-        task_service.create_sample_task(result)
-    case RecommendedAction.REQUEST_COSTING:
-        costing_service.open_request(result)
-    case RecommendedAction.PROCESS_PURCHASE_ORDER:
-        po_service.process(result)
-    case RecommendedAction.ESCALATE:
-        slack_service.alert_ops_team(result)
-    case _:
-        audit_log.record(result)
-```
+### 3. How do you test without calling the LLM API every time?
+I use MagicMock to simulate LLM responses during testing. Instead of making real API calls, the mock returns predefined responses. This allows me to test the chain logic, parser, validation, and output models quickly without depending on the actual LLM service.
+
+### 4. How would you add a new email type (e.g., INSPECTION_REQUEST)?
+The chain architecture remains the same. I would simply add the new category to the classification prompt, update the output model if needed, and add the corresponding action recommendation logic. Since the chains are already separated by responsibility, no major code changes are required. 
+(Enum and pydantic flow must be modified based on.)
 
 ---
+## Proposed Shared Order-State Model
 
-## Adding a New Category (e.g. `INSPECTION_REQUEST`)
+This section addresses Questions 5 and 6 from the assignment.
 
-1. Add to `EmailCategory` enum in `models.py`:
-   ```python
-   INSPECTION_REQUEST = "INSPECTION_REQUEST"
-   ```
-2. Add to `RecommendedAction` enum in `models.py`:
-   ```python
-   SCHEDULE_INSPECTION = "SCHEDULE_INSPECTION"
-   ```
-3. Add one line to `CHAIN_2_SYSTEM` in `prompts.py`:
-   ```
-   - INSPECTION_REQUEST → SCHEDULE_INSPECTION (priority: HIGH)
-   ```
-4. Add test cases to `tests/test_chains.py`.
+### What is the minimal shared order-state model that allows multiple agents to collaborate without overwriting each other's updates?
 
-**No chain wiring changes required.** This is the SOLID Open/Closed Principle — open for extension, closed for modification.
+In a real production system, multiple AI agents may work on the same order. For example, a Sampling Agent may track sample requests, a Costing Agent may manage pricing discussions, and a Purchase Order Agent may handle PO updates.
 
----
+To allow these agents to collaborate, I would maintain a shared order record in PostgreSQL. This record acts as the source of truth for the order and stores its latest status.
 
-## Proposed Shared Order-State Model (Design Notes)
+Each agent should only update the fields related to its responsibility. For example, the Sampling Agent updates sample-related fields while the Costing Agent updates costing-related fields. This prevents agents from accidentally overwriting each other's work.
 
-> No code required. This section proposes how order state should be persisted when multiple agents interact with the same order over time.
-
-### The Problem
-
-Multiple agents (email classifier, sampling agent, costing agent, PO agent) all interact with the same order at different points in time. Each agent must be able to:
-- Read the current order state without blocking other agents.
-- Update only the fields it is responsible for.
-- Never overwrite updates made by a concurrent agent.
-
-### Proposed Schema
+A minimal order state could look like:
 
 ```json
 {
-  "order_id": "ORD-2026-001",
-  "style_refs": ["RI15104"],
-  "buyer": "Garan",
-  "vendor": "BestCorp",
-  "status": "SAMPLING",
-  "checkpoints": {
-    "classification_done": true,
-    "sample_task_created": true,
-    "costing_submitted": false,
-    "po_issued": false,
-    "shipped": false
-  },
-  "ownership": {
-    "classification": "email_classifier_agent",
-    "sampling": "sampling_agent",
-    "costing": null,
-    "po": null
-  },
-  "history": [
-    {
-      "agent": "email_classifier_agent",
-      "action": "CLASSIFIED",
-      "timestamp": "2026-06-02T10:00:00Z",
-      "payload": { "category": "SAMPLING", "confidence": 0.95 }
-    }
-  ],
-  "version": 3,
-  "updated_at": "2026-06-02T10:05:00Z"
+  "order_id": "RI15104",
+  "buyer_name": "Buyer Name",
+  "sample_status": "APPROVED",
+  "costing_status": "PENDING",
+  "po_status": "NOT_RECEIVED",
+  "last_updated": "2026-06-03T10:00:00Z"
 }
 ```
 
-### Update Rules
+PostgreSQL would be used for long-term storage and as the source of truth. Redis could be added later as a caching layer to improve performance and reduce repeated database reads.
 
-1. **Optimistic locking via `version`** — Each agent reads the current `version`, makes its changes, and writes back only if `version` has not changed. If it has, the agent re-reads and retries.
+### Shared Order-State Flow
 
-2. **Field ownership** — Each agent writes only to its designated `ownership` slot. No agent can modify another agent's fields.
-
-3. **Append-only `history`** — All updates are appended, never deleted. This gives a complete audit trail across all agents.
-
-4. **Atomic writes** — Use a database transaction or compare-and-swap (CAS) to guarantee read-modify-write is atomic.
-
-5. **Future fields from techpack/client docs:**
-   - `crd` — Critical Request Date
-   - `target_fob` — target FOB price from buyer
-   - `fabric_status` — bulk fabric booking state
-   - `inspection_date` — scheduled QC inspection
-   - `tech_pack_url` — link to buyer's tech pack PDF
-
-### Recommended Storage
-
-| Use case | Technology |
-|---|---|
-| Production (ACID guarantees) | PostgreSQL with row-level locking |
-| High-throughput / low-latency | Redis with `WATCH/MULTI/EXEC` (CAS) |
-| Simple prototyping | SQLite with SQLAlchemy |
+![Order State Flow](docs/order_state.drawio.png)
 
 ---
 
-## Environment Variables
+### Which fields from techpack/client docs are important to persist for future flows?
 
-| Variable | Default | Description |
-|---|---|---|
-| `GROQ_API_KEY` | *(required)* | Groq API key |
-| `LLM_MODEL` | `llama-3.3-70b-versatile` | Model name |
-| `LLM_TEMPERATURE` | `0.0` | Sampling temperature (0 = deterministic) |
+Although the current solution only uses email data, future workflows may require information from tech packs and client documents.
+
+Important fields to persist include:
+
+* Style Reference ID
+* Buyer Name
+* Target FOB
+* Critical Request Date (CRD)
+* Fabric Details
+* Fabric Status
+* Colorways
+* Size Range
+* Assigned Team or Owner
+* Tech Pack Reference or URL
+
+Storing these fields allows future agents to access important business information without repeatedly processing the same documents.
+
+---
+
+## API Output
+
+![FastAPI POST Request Output](docs/api_output.png)
+
+The API exposes a POST endpoint at `/api/v1/classify`. You send the email's subject, body, and optional thread context as a JSON payload and get back the classification and recommended action in one response. The Swagger UI at `/docs` lets you test this directly in the browser without writing any code. Both chains run automatically in the background, just get the final structured output.
