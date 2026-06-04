@@ -1,3 +1,4 @@
+# Tests for the two chains and the style ID validator — all LLM calls are mocked.
 from __future__ import annotations
 
 import json
@@ -19,8 +20,6 @@ from app.llm.parser import (
 from app.llm.chains import build_chain_1, build_chain_2
 
 
-# --- Helpers ---
-
 def make_mock_llm(response_content: str) -> MagicMock:
     """Return a mock LLM that replies with the given JSON string."""
     msg = MagicMock()
@@ -29,8 +28,6 @@ def make_mock_llm(response_content: str) -> MagicMock:
     llm.invoke.return_value = msg
     return llm
 
-
-# --- Tests ---
 
 def test_validate_style_ids_passes_valid_ids():
     """IDs present in the email text should pass through."""
