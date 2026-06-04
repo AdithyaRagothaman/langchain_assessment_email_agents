@@ -1,3 +1,4 @@
+# FastAPI routes — /classify runs the email through the pipeline, /health checks the service is up.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
@@ -8,7 +9,6 @@ from app.services.email_pipeline import EmailPipeline, EmailPipelineError
 
 router = APIRouter(prefix="/api/v1", tags=["email-classification"])
 
-# Single pipeline instance shared across all requests
 _pipeline = EmailPipeline()
 
 

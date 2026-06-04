@@ -1,3 +1,4 @@
+# Connects Chain 1 and Chain 2 into a single pipeline and wraps errors cleanly.
 from __future__ import annotations
 
 from langchain_groq import ChatGroq
